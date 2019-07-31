@@ -1,26 +1,61 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
-pandoc "$1" -s --css css.css -o "$1.html"
+# Stops the script and prints usage if no file is supplied.
+[ $# -eq 0 ] && { echo "Usage: $0 <file>"; exit 1; }
+
+# Defines the location of the output file. If "README.md" is supplied, the
+# output file will be "README.pdf". Perl instead of grep because BSD 
+# implementations of grep lack the -P option for PCRE from GNU grep.
+outputFile="$(echo "$1" | perl -ne '/^(.+?)(\.md|$)/ & print $1').pdf"
+
+# Converts the Markdown to HTML with the stylesheet, then converts the HTML & 
+# CSS to PDF. The PDF is generated with a quarter inch margin on top and a half
+# inch margin on the bottom, with no side margins.
+pandoc "$1" -s --css ~/.config/md-render/css.css -o "$1.html"
 wkhtmltopdf -s "A4" -T 0.25in -R 0in -B 0.5in -L 0in --footer-right "[page]        " "$1.html" "$1.pdf"
 
+# Counts the pages in the whole document.
+pages=$(pdfinfo "$1.pdf" | perl -ne '/Pages: .*?([0-9.]+)$/ && print $1')
+
+# Stores the first page of the PDF in "$1-cover.pdf", and stores the rest of the
+# pages, if any, in "$1.pdf".
 pdfjam -o "$1-cover.pdf" "$1.pdf" 1
 pdfjam -o "$1.pdf" "$1.pdf" 2-
 
-pageWidth=$(pdfinfo "$1-cover.pdf" | perl -ne'/Page size: *?([0-9.]+) / && print $1')
-pageHeight=$(pdfinfo "$1-cover.pdf" | perl -ne'/Page size: .*? x ([0-9.]+) / && print $1')
+# Calculates the width and height (in bp) for the cover page of the PDF.
+pageWidth=$(pdfinfo "$1-cover.pdf" | perl -ne '/Page size: *?([0-9.]+) / && print $1')
+pageHeight=$(pdfinfo "$1-cover.pdf" | perl -ne '/Page size: .*? x ([0-9.]+) / && print $1')
 
+# Stores the dimensions of the bounding box of the first page of the PDF to be
+# grepped out later. pdfcrop reports these numbers in bp as follows:
+#     <left> <top> <right> <bottom>
 boundingBox=$(pdfcrop --verbose "$1-cover.pdf" "$1-cover.pdf" | grep "%%BoundingBox")
-marginLeft=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $1')
-marginTop=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $2')
-marginRight=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $3')
+
+# Calculates the margins (in bp) for the cover page using the page and bounding 
+# box dimensions.
+marginLeft=$(echo "$boundingBox" | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $1')
+marginTop=$(echo "$boundingBox" | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $2')
+marginRight=$(echo "$boundingBox" | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $3')
 marginRight=$(echo "$pageWidth - $marginRight" | bc)
-marginBottom=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $4')
+marginBottom=$(echo "$boundingBox" | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $4')
 marginBottom=$(echo "$pageHeight - $marginBottom" | bc)
 
+# Alters the cover page, removing the top margin and adds the old top margin to
+# the bottom margin. pdfcrop assigns margins in the following order:
+#     <left> <top> <right> <bottom>
 pdfcrop --margins "0 0 0 $(echo "$marginBottom + $marginTop" | bc)" "$1-cover.pdf" "$1-cover.pdf"
 
-pdfjam "$1-cover.pdf" "$1.pdf" -o "$(echo "$1.pdf" | perl -ne '/^(.+?)(\.md|$)/ & print $1').pdf"
+# If there is more than one page, the cover page joins back to the other pages
+# and saves to the output file. If there is only one page in the document, the
+# output file is set to the cover page.
+if [ "$pages" -gt "1" ]; then
+	pdfjam "$1-cover.pdf" "$1.pdf" -o "$outputFile"
+else
+	cp "$1-cover.pdf" "$outputFile"
+	echo "Finished. Output was to '$outputFile'"
+fi
 
+# Cleanup of intermediary files.
 rm "$1-cover.pdf"
 rm "$1.pdf"
 rm "$1.html"
