@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+pandoc "$1" -s --css css.css -o "$1.html"
+wkhtmltopdf -s "A4" -T 0.25in -R 0in -B 0.5in -L 0in --footer-right "[page]        " "$1.html" "$1.pdf"
+
+pdfjam -o "$1-cover.pdf" "$1.pdf" 1
+pdfjam -o "$1.pdf" "$1.pdf" 2-
+
+pageWidth=$(pdfinfo "$1-cover.pdf" | perl -ne'/Page size: *?([0-9.]+) / && print $1')
+pageHeight=$(pdfinfo "$1-cover.pdf" | perl -ne'/Page size: .*? x ([0-9.]+) / && print $1')
+
+boundingBox=$(pdfcrop --verbose "$1-cover.pdf" "$1-cover.pdf" | grep "%%BoundingBox")
+marginLeft=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $1')
+marginTop=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $2')
+marginRight=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $3')
+marginRight=$(echo "$pageWidth - $marginRight" | bc)
+marginBottom=$(echo $boundingBox | perl -ne '/.+? (\d+) (\d+) (\d+) (\d+)/ && print $4')
+marginBottom=$(echo "$pageHeight - $marginBottom" | bc)
+
+pdfcrop --margins "0 0 0 $(echo "$marginBottom + $marginTop" | bc)" "$1-cover.pdf" "$1-cover.pdf"
+
+pdfjam "$1-cover.pdf" "$1.pdf" -o "$(echo "$1.pdf" | perl -ne '/^(.+?)(\.md|$)/ & print $1').pdf"
+
+rm "$1-cover.pdf"
+rm "$1.pdf"
+rm "$1.html"
