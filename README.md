@@ -13,7 +13,7 @@ The following programs are required for md-render to work:
 
 ### GNU/Linux dependency installation (Debian-based)
 ```sh
-sudo apt install pandoc wkhtmltopdf texlive-extra-utils poppler-utils 
+sudo apt install pandoc wkhtmltopdf texlive-latex-recommended texlive-extra-utils poppler-utils 
 ```
 
 ### MacOS dependency installation
